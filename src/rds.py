@@ -45,7 +45,7 @@ def does_target_exists(client, db_identifier, cluster_mode):
 def get_latest_snapshot(client, db_identifier, cluster_mode):
     if cluster_mode:
         response = client.describe_db_cluster_snapshots(
-            DBClusterIdentifier=db_identifier, SnapshotType="automated"
+            DBClusterIdentifier=db_identifier
         )
         if not response["DBClusterSnapshots"]:
             return None
