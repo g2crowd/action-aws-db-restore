@@ -32,7 +32,7 @@ def main(command_line=None):
     target_credentials = assume_aws_role(target.get("AssumeRole"), "target")
 
     tf_outputs = get_outputs(target_credentials, args.tfstate)
-    if args.tfstate is not None and tf_outputs is None:
+    if args.tfstate and tf_outputs is None:
         LOGGER.error("TF state file does not exists")
         exit(1)
 
