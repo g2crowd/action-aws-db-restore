@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime
 from operator import itemgetter
 
@@ -267,6 +268,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
                 NewDBClusterIdentifier=old_identifier,
                 ApplyImmediately=True,
             )
+            time.sleep(60)
             waiter = client.get_waiter("db_cluster_available")
             waiter.wait(DBClusterIdentifier=old_identifier, WaiterConfig=get_waiter_config())
 
@@ -276,6 +278,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             NewDBClusterIdentifier=db_identifier,
             ApplyImmediately=True,
         )
+        time.sleep(60)
         waiter = client.get_waiter("db_cluster_available")
         waiter.wait(DBClusterIdentifier=db_identifier, WaiterConfig=get_waiter_config())
 
@@ -285,6 +288,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             NewDBInstanceIdentifier=db_identifier + "-main",
             ApplyImmediately=True,
         )
+        time.sleep(60)
         waiter = client.get_waiter("db_instance_available")
         waiter.wait(
             DBInstanceIdentifier=db_identifier + "-main",
@@ -322,6 +326,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
                 NewDBInstanceIdentifier=old_identifier,
                 ApplyImmediately=True,
             )
+            time.sleep(60)
             waiter = client.get_waiter("db_instance_available")
             waiter.wait(DBInstanceIdentifier=old_identifier, WaiterConfig=get_waiter_config())
 
@@ -331,6 +336,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             NewDBInstanceIdentifier=db_identifier,
             ApplyImmediately=True,
         )
+        time.sleep(60)
         waiter = client.get_waiter("db_instance_available")
         waiter.wait(
             DBInstanceIdentifier=db_identifier, WaiterConfig=get_waiter_config()
