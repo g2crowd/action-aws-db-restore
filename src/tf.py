@@ -28,7 +28,7 @@ def parse_outputs(data):
 
 
 def get_outputs(assumed_role, state_file):
-    if state_file is None:
+    if not state_file:
         return None
 
     client = init_client(assumed_role)
