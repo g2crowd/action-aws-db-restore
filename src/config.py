@@ -49,14 +49,6 @@ def is_sharing_enabled(data):
     return result
 
 
-def _fetch_from_tfstate(key, tf_outputs):
-    result = tf_outputs.get(key)
-    if result is None:
-        LOGGER.error("%s does not exists in TF state" % key)
-        return None
-    return result
-
-
 def _fetch_from_env(key):
     result = os.environ.get(key)
     if result is None:
@@ -69,23 +61,21 @@ def _fetch_from_ssm(key, assume_role):
     return get_parameter(assume_role, key)
 
 
-def replace_placeholder(value, tf_outputs, assume_role):
+def replace_placeholder(value, assume_role):
     if type(value) == str:
         pattern = re.compile(r"\${(.+):(.+)}")
         result = pattern.search(value)
         if result is None:
             return value
-        elif result.group(1) == "tf":
-            value = _fetch_from_tfstate(result.group(2), tf_outputs)
         elif result.group(1) == "ssm":
             value = _fetch_from_ssm(result.group(2), assume_role)
         elif result.group(1) == "env":
             value = _fetch_from_env(result.group(2))
         return value
     elif type(value) == list:
-        return [replace_placeholder(i, tf_outputs, assume_role) for i in value]
+        return [replace_placeholder(i, assume_role) for i in value]
     elif type(value) == dict:
         return {
-            k: replace_placeholder(i, tf_outputs, assume_role) for k, i in value.items()
+            k: replace_placeholder(i, assume_role) for k, i in value.items()
         }
     return value

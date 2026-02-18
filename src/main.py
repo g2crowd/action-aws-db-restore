@@ -9,7 +9,6 @@ from src.rds import (
     restore_snapshot,
     share_snapshot,
 )
-from src.tf import get_outputs
 from src.utils import assume_aws_role, setup_custom_logger
 
 LOGGER = setup_custom_logger("root")
@@ -18,7 +17,6 @@ LOGGER = setup_custom_logger("root")
 def main(command_line=None):
     parser = argparse.ArgumentParser(description="Restore RDS snapshot")
     parser.add_argument("-c", "--config", required=True)
-    parser.add_argument("-t", "--tfstate")
     args = parser.parse_args(command_line)
 
     data = load_config(args.config)
@@ -31,13 +29,8 @@ def main(command_line=None):
     target = data["Target"]
     target_credentials = assume_aws_role(target.get("AssumeRole"), "target")
 
-    tf_outputs = get_outputs(target_credentials, args.tfstate)
-    if args.tfstate and tf_outputs is None:
-        LOGGER.error("TF state file does not exists")
-        exit(1)
-
-    source = replace_placeholder(source, tf_outputs or {}, target_credentials)
-    target = replace_placeholder(target, tf_outputs or {}, target_credentials)
+    source = replace_placeholder(source, target_credentials)
+    target = replace_placeholder(target, target_credentials)
 
     target_client = init_client(target_credentials)
     target_exists = does_target_exists(
