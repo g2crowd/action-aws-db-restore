@@ -222,15 +222,14 @@ def share_snapshot(client, source, target, kms_key, account, cluster_mode):
 
 def restore_snapshot(client, data, target_exists, cluster_mode):
     db_identifier = data["DBIdentifier"]
-    if target_exists:
-        db_identifier = data["SnapshotIdentifier"]
-    db_instance_identifier = db_identifier + "main"
+    temp_identifier = db_identifier + "-new"
+    temp_instance_identifier = db_identifier + "-new-main"
 
-    LOGGER.info("Creating RDS {} from {}".format(db_identifier, data["SnapshotArn"]))
+    LOGGER.info("Creating RDS {} from {}".format(temp_identifier, data["SnapshotArn"]))
     if cluster_mode:
         LOGGER.info("Creating DB cluster")
         client.restore_db_cluster_from_snapshot(
-            DBClusterIdentifier=db_identifier,
+            DBClusterIdentifier=temp_identifier,
             SnapshotIdentifier=data["SnapshotArn"],
             Engine=data["Engine"],
             EngineVersion=data["EngineVersion"],
@@ -243,22 +242,58 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             PubliclyAccessible=data["PubliclyAccessible"],
         )
         waiter = client.get_waiter("db_cluster_available")
-        waiter.wait(DBClusterIdentifier=db_identifier, WaiterConfig=get_waiter_config())
+        waiter.wait(DBClusterIdentifier=temp_identifier, WaiterConfig=get_waiter_config())
         LOGGER.info("Creating DB instance")
         client.create_db_instance(
-            DBClusterIdentifier=db_identifier,
-            DBInstanceIdentifier=db_instance_identifier,
+            DBClusterIdentifier=temp_identifier,
+            DBInstanceIdentifier=temp_instance_identifier,
             Engine=data["Engine"],
             DBInstanceClass=data["DBInstanceClass"],
         )
         waiter = client.get_waiter("db_instance_available")
         waiter.wait(
-            DBInstanceIdentifier=db_instance_identifier,
+            DBInstanceIdentifier=temp_instance_identifier,
             WaiterConfig=get_waiter_config(),
         )
+
+        if target_exists:
+            old_identifier = db_identifier + "-old"
+            LOGGER.info("Renaming {} to {}".format(db_identifier, old_identifier))
+            client.modify_db_cluster(
+                DBClusterIdentifier=db_identifier,
+                NewDBClusterIdentifier=old_identifier,
+                ApplyImmediately=True,
+            )
+            waiter = client.get_waiter("db_cluster_available")
+            waiter.wait(DBClusterIdentifier=old_identifier, WaiterConfig=get_waiter_config())
+
+        LOGGER.info("Renaming {} to {}".format(temp_identifier, db_identifier))
+        client.modify_db_cluster(
+            DBClusterIdentifier=temp_identifier,
+            NewDBClusterIdentifier=db_identifier,
+            ApplyImmediately=True,
+        )
+        waiter = client.get_waiter("db_cluster_available")
+        waiter.wait(DBClusterIdentifier=db_identifier, WaiterConfig=get_waiter_config())
+
+        LOGGER.info("Renaming instance {} to {}".format(temp_instance_identifier, db_identifier + "-main"))
+        client.modify_db_instance(
+            DBInstanceIdentifier=temp_instance_identifier,
+            NewDBInstanceIdentifier=db_identifier + "-main",
+            ApplyImmediately=True,
+        )
+        waiter = client.get_waiter("db_instance_available")
+        waiter.wait(
+            DBInstanceIdentifier=db_identifier + "-main",
+            WaiterConfig=get_waiter_config(),
+        )
+
+        if target_exists:
+            delete_rds(client, old_identifier, cluster_mode)
+
     else:
         client.restore_db_instance_from_db_snapshot(
-            DBInstanceIdentifier=db_identifier,
+            DBInstanceIdentifier=temp_identifier,
             DBSnapshotIdentifier=data["SnapshotArn"],
             DBInstanceClass=data["DBInstanceClass"],
             DBSubnetGroupName=data["DBSubnetGroupName"],
@@ -270,9 +305,102 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
         )
         waiter = client.get_waiter("db_instance_available")
         waiter.wait(
+            DBInstanceIdentifier=temp_identifier, WaiterConfig=get_waiter_config()
+        )
+
+        if target_exists:
+            old_identifier = db_identifier + "-old"
+            LOGGER.info("Renaming {} to {}".format(db_identifier, old_identifier))
+            client.modify_db_instance(
+                DBInstanceIdentifier=db_identifier,
+                NewDBInstanceIdentifier=old_identifier,
+                ApplyImmediately=True,
+            )
+            waiter = client.get_waiter("db_instance_available")
+            waiter.wait(DBInstanceIdentifier=old_identifier, WaiterConfig=get_waiter_config())
+
+        LOGGER.info("Renaming {} to {}".format(temp_identifier, db_identifier))
+        client.modify_db_instance(
+            DBInstanceIdentifier=temp_identifier,
+            NewDBInstanceIdentifier=db_identifier,
+            ApplyImmediately=True,
+        )
+        waiter = client.get_waiter("db_instance_available")
+        waiter.wait(
             DBInstanceIdentifier=db_identifier, WaiterConfig=get_waiter_config()
         )
 
-    if target_exists:
-        delete_rds(client, data["DBIdentifier"], cluster_mode)
-        update_identifier(client, db_identifier, data["DBIdentifier"], cluster_mode)
+        if target_exists:
+            delete_rds(client, old_identifier, cluster_mode)
+
+
+def get_snapshot_details(client, snapshot_identifier, cluster_mode):
+    """Get snapshot ARN, engine, and engine version by exact snapshot identifier."""
+    try:
+        if cluster_mode:
+            response = client.describe_db_cluster_snapshots(
+                DBClusterSnapshotIdentifier=snapshot_identifier
+            )
+            if not response["DBClusterSnapshots"]:
+                LOGGER.error("Snapshot %s not found" % snapshot_identifier)
+                return None, None, None, None
+            snap = response["DBClusterSnapshots"][0]
+            return (
+                snap["DBClusterSnapshotIdentifier"],
+                snap["DBClusterSnapshotArn"],
+                snap["Engine"],
+                snap["EngineVersion"],
+            )
+        else:
+            response = client.describe_db_snapshots(
+                DBSnapshotIdentifier=snapshot_identifier
+            )
+            if not response["DBSnapshots"]:
+                LOGGER.error("Snapshot %s not found" % snapshot_identifier)
+                return None, None, None, None
+            snap = response["DBSnapshots"][0]
+            return (
+                snap["DBSnapshotIdentifier"],
+                snap["DBSnapshotArn"],
+                snap["Engine"],
+                snap["EngineVersion"],
+            )
+    except ClientError as err:
+        LOGGER.error(
+            "{}: {}".format(
+                err.response["Error"]["Code"], err.response["Error"]["Message"]
+            )
+        )
+        return None, None, None, None
+
+
+def get_cluster_endpoint(client, db_identifier):
+    """Get the writer endpoint of an Aurora cluster."""
+    try:
+        response = client.describe_db_clusters(DBClusterIdentifier=db_identifier)
+        if not response["DBClusters"]:
+            return None
+        return response["DBClusters"][0]["Endpoint"]
+    except ClientError as err:
+        LOGGER.error(
+            "{}: {}".format(
+                err.response["Error"]["Code"], err.response["Error"]["Message"]
+            )
+        )
+        return None
+
+
+def get_cluster_master_username(client, db_identifier):
+    """Get the master username of an Aurora cluster."""
+    try:
+        response = client.describe_db_clusters(DBClusterIdentifier=db_identifier)
+        if not response["DBClusters"]:
+            return None
+        return response["DBClusters"][0]["MasterUsername"]
+    except ClientError as err:
+        LOGGER.error(
+            "{}: {}".format(
+                err.response["Error"]["Code"], err.response["Error"]["Message"]
+            )
+        )
+        return None
