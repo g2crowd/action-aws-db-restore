@@ -228,6 +228,9 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
     LOGGER.info("Creating RDS {} from {}".format(temp_identifier, data["SnapshotArn"]))
     if cluster_mode:
         LOGGER.info("Creating DB cluster")
+        vpc_sg_ids = data["VpcSecurityGroupIds"]
+        if isinstance(vpc_sg_ids, str):
+            vpc_sg_ids = [vpc_sg_ids]
         client.restore_db_cluster_from_snapshot(
             DBClusterIdentifier=temp_identifier,
             SnapshotIdentifier=data["SnapshotArn"],
@@ -235,7 +238,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             EngineVersion=data["EngineVersion"],
             DBClusterInstanceClass=data["DBInstanceClass"],
             DBSubnetGroupName=data["DBSubnetGroupName"],
-            VpcSecurityGroupIds=data["VpcSecurityGroupIds"],
+            VpcSecurityGroupIds=vpc_sg_ids,
             Tags=data["Tags"],
             DeletionProtection=False,
             CopyTagsToSnapshot=True,
@@ -292,6 +295,9 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             delete_rds(client, old_identifier, cluster_mode)
 
     else:
+        vpc_sg_ids = data["VpcSecurityGroupIds"]
+        if isinstance(vpc_sg_ids, str):
+            vpc_sg_ids = [vpc_sg_ids]
         client.restore_db_instance_from_db_snapshot(
             DBInstanceIdentifier=temp_identifier,
             DBSnapshotIdentifier=data["SnapshotArn"],
@@ -299,7 +305,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             DBSubnetGroupName=data["DBSubnetGroupName"],
             PubliclyAccessible=data["PubliclyAccessible"],
             Tags=data["Tags"],
-            VpcSecurityGroupIds=data["VpcSecurityGroupIds"],
+            VpcSecurityGroupIds=vpc_sg_ids,
             CopyTagsToSnapshot=True,
             DeletionProtection=False,
         )
