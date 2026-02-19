@@ -248,10 +248,14 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
     temp_identifier = db_identifier + "-new"
     temp_instance_identifier = db_identifier + "-new-main"
 
-    # Clean up any leftover temp resources from a previous failed run
+    # Clean up any leftover resources from a previous failed run
+    old_identifier = db_identifier + "-old"
     if does_target_exists(client, temp_identifier, cluster_mode):
         LOGGER.info("Cleaning up leftover temp cluster %s from a previous run" % temp_identifier)
         delete_rds(client, temp_identifier, cluster_mode)
+    if does_target_exists(client, old_identifier, cluster_mode):
+        LOGGER.info("Cleaning up leftover old cluster %s from a previous run" % old_identifier)
+        delete_rds(client, old_identifier, cluster_mode)
 
     LOGGER.info("Creating RDS {} from {}".format(temp_identifier, data["SnapshotArn"]))
     if cluster_mode:
@@ -302,7 +306,6 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
         )
 
         if target_exists:
-            old_identifier = db_identifier + "-old"
             LOGGER.info("Renaming {} to {}".format(db_identifier, old_identifier))
             client.modify_db_cluster(
                 DBClusterIdentifier=db_identifier,
@@ -351,7 +354,6 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
         )
 
         if target_exists:
-            old_identifier = db_identifier + "-old"
             LOGGER.info("Renaming {} to {}".format(db_identifier, old_identifier))
             client.modify_db_instance(
                 DBInstanceIdentifier=db_identifier,
