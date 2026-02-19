@@ -226,6 +226,11 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
     temp_identifier = db_identifier + "-new"
     temp_instance_identifier = db_identifier + "-new-main"
 
+    # Clean up any leftover temp resources from a previous failed run
+    if does_target_exists(client, temp_identifier, cluster_mode):
+        LOGGER.info("Cleaning up leftover temp cluster %s from a previous run" % temp_identifier)
+        delete_rds(client, temp_identifier, cluster_mode)
+
     LOGGER.info("Creating RDS {} from {}".format(temp_identifier, data["SnapshotArn"]))
     if cluster_mode:
         LOGGER.info("Creating DB cluster")
