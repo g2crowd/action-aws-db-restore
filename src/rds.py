@@ -4,9 +4,29 @@ from datetime import datetime
 from operator import itemgetter
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, WaiterError
 
 LOGGER = logging.getLogger("root")
+
+
+def _wait_after_rename(waiter, **kwargs):
+    """Wait for a resource after a rename, retrying if not yet visible.
+
+    AWS rename operations (modify_db_cluster/modify_db_instance) can take time
+    to propagate. The waiter immediately fails with NotFound on the first poll
+    if the new name isn't visible yet. This wrapper retries up to 10 times
+    (each retry adds 60 seconds) to handle propagation delays.
+    """
+    for attempt in range(10):
+        try:
+            waiter.wait(**kwargs, WaiterConfig=get_waiter_config())
+            return
+        except WaiterError as e:
+            if "NotFound" in str(e) and attempt < 9:
+                LOGGER.info("Resource not yet visible after rename, retrying in 60s (attempt %d/10)" % (attempt + 1))
+                time.sleep(60)
+            else:
+                raise
 
 
 def init_client(assumed_role):
@@ -289,9 +309,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
                 NewDBClusterIdentifier=old_identifier,
                 ApplyImmediately=True,
             )
-            time.sleep(60)
-            waiter = client.get_waiter("db_cluster_available")
-            waiter.wait(DBClusterIdentifier=old_identifier, WaiterConfig=get_waiter_config())
+            _wait_after_rename(client.get_waiter("db_cluster_available"), DBClusterIdentifier=old_identifier)
 
         LOGGER.info("Renaming {} to {}".format(temp_identifier, db_identifier))
         client.modify_db_cluster(
@@ -299,9 +317,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             NewDBClusterIdentifier=db_identifier,
             ApplyImmediately=True,
         )
-        time.sleep(60)
-        waiter = client.get_waiter("db_cluster_available")
-        waiter.wait(DBClusterIdentifier=db_identifier, WaiterConfig=get_waiter_config())
+        _wait_after_rename(client.get_waiter("db_cluster_available"), DBClusterIdentifier=db_identifier)
 
         LOGGER.info("Renaming instance {} to {}".format(temp_instance_identifier, db_identifier + "-main"))
         client.modify_db_instance(
@@ -309,12 +325,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             NewDBInstanceIdentifier=db_identifier + "-main",
             ApplyImmediately=True,
         )
-        time.sleep(60)
-        waiter = client.get_waiter("db_instance_available")
-        waiter.wait(
-            DBInstanceIdentifier=db_identifier + "-main",
-            WaiterConfig=get_waiter_config(),
-        )
+        _wait_after_rename(client.get_waiter("db_instance_available"), DBInstanceIdentifier=db_identifier + "-main")
 
         if target_exists:
             delete_rds(client, old_identifier, cluster_mode)
@@ -347,9 +358,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
                 NewDBInstanceIdentifier=old_identifier,
                 ApplyImmediately=True,
             )
-            time.sleep(60)
-            waiter = client.get_waiter("db_instance_available")
-            waiter.wait(DBInstanceIdentifier=old_identifier, WaiterConfig=get_waiter_config())
+            _wait_after_rename(client.get_waiter("db_instance_available"), DBInstanceIdentifier=old_identifier)
 
         LOGGER.info("Renaming {} to {}".format(temp_identifier, db_identifier))
         client.modify_db_instance(
@@ -357,11 +366,7 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             NewDBInstanceIdentifier=db_identifier,
             ApplyImmediately=True,
         )
-        time.sleep(60)
-        waiter = client.get_waiter("db_instance_available")
-        waiter.wait(
-            DBInstanceIdentifier=db_identifier, WaiterConfig=get_waiter_config()
-        )
+        _wait_after_rename(client.get_waiter("db_instance_available"), DBInstanceIdentifier=db_identifier)
 
         if target_exists:
             delete_rds(client, old_identifier, cluster_mode)
