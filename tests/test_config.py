@@ -36,23 +36,13 @@ class TestConfig:
             "Target": {
                 "AssumeRole": "arn:aws:iam::11223334544:role/db_restore_role",
                 "DBIdentifier": "dash-staging",
-                "VpcSecurityGroupIds": "${tf:db_global_security_group}",
+                "VpcSecurityGroupIds": "sg-076cd3b3c6",
                 "DBSubnetGroupName": "${env:PRIVATE_SUBNET}",
                 "CopyTagsToSnapshot": True,
-                "DBInstanceClass": "${tf:instance_class}",
+                "DBInstanceClass": "db.t4g.large",
                 "PubliclyAccessible": False,
                 "Tags": [{"Key": "owner", "Value": "snapshot_restore"}],
             },
-        }
-
-    @pytest.fixture
-    def tfdate(self):
-        return {
-            "db_global_security_group": ["sg-076cd3b3c6"],
-            "db_staging_private_subnet": "staging-global-private",
-            "db_staging_public_subnet": "staging-global-public",
-            "private_subnets": ["subnet-0127daddc0c", "subnet-0a950bee5c"],
-            "public_subnets": ["subnet-0edbc1b60d0", "subnet-621ed974ea"],
         }
 
     def test_is_valid(self, data):
@@ -84,21 +74,13 @@ class TestConfig:
         del valid_data["Source"]["Share"]
         assert is_sharing_enabled(valid_data) is False
 
-    def test_replace_placeholder_env_not_present(self, data, tfdate):
-        parsed_data = replace_placeholder(data, tfdate, ASSUME_ROLE_DISABLED)
+    def test_replace_placeholder_env_not_present(self, data):
+        parsed_data = replace_placeholder(data, ASSUME_ROLE_DISABLED)
         assert parsed_data["Target"]["DBSubnetGroupName"] is None
 
-    def test_replace_placeholder_env_present(self, data, tfdate):
+    def test_replace_placeholder_env_present(self, data):
         key = "PRIVATE_SUBNET"
         value = "staging-global-private"
         os.environ[key] = value
-        parsed_data = replace_placeholder(data, tfdate, ASSUME_ROLE_DISABLED)
+        parsed_data = replace_placeholder(data, ASSUME_ROLE_DISABLED)
         assert parsed_data["Target"]["DBSubnetGroupName"] == value
-
-    def test_replace_placeholder_tfdata_not_present(self, data, tfdate):
-        parsed_data = replace_placeholder(data, tfdate, ASSUME_ROLE_DISABLED)
-        assert parsed_data["Target"]["DBInstanceClass"] is None
-
-    def test_replace_placeholder_tfdata_present(self, data, tfdate):
-        parsed_data = replace_placeholder(data, tfdate, ASSUME_ROLE_DISABLED)
-        assert parsed_data["Target"]["VpcSecurityGroupIds"] == ["sg-076cd3b3c6"]

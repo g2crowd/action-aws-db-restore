@@ -10,8 +10,6 @@ branding:
 inputs:
   config:
     description: The configuration file path
-  tfstate:
-    description: The configuTF state file path
 
 outputs:
   success:
@@ -22,4 +20,3 @@ runs:
   image: Dockerfile
   args:
     - ${{ inputs.config }}
-    - ${{ inputs.tfstate }}

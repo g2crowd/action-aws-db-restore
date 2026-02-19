@@ -18,7 +18,7 @@ def setup_custom_logger(name):
 
 
 def assume_aws_role(role_arn, role_name):
-    if role_arn is None:
+    if not role_arn:
         return None
 
     LOGGER.info(f"Assuming {role_name} AWS role")
