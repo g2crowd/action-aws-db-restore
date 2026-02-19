@@ -73,20 +73,22 @@ def delete_rds(client, db_identifier, cluster_mode):
     LOGGER.info("Deleting %s db" % db_identifier)
     try:
         if cluster_mode:
-            LOGGER.info("Deleting db instance")
             response = client.describe_db_clusters(
                 DBClusterIdentifier=db_identifier
             )
-            db_instance_identifier = response["DBClusters"][0]["DBClusterMembers"][0]["DBInstanceIdentifier"]
-            client.delete_db_instance(
-                DBInstanceIdentifier=db_instance_identifier,
-                SkipFinalSnapshot=True,
-                DeleteAutomatedBackups=True,
-            )
-            waiter = client.get_waiter("db_instance_deleted")
-            waiter.wait(
-                DBInstanceIdentifier=db_instance_identifier, WaiterConfig=get_waiter_config()
-            )
+            members = response["DBClusters"][0]["DBClusterMembers"]
+            if members:
+                db_instance_identifier = members[0]["DBInstanceIdentifier"]
+                LOGGER.info("Deleting db instance %s" % db_instance_identifier)
+                client.delete_db_instance(
+                    DBInstanceIdentifier=db_instance_identifier,
+                    SkipFinalSnapshot=True,
+                    DeleteAutomatedBackups=True,
+                )
+                waiter = client.get_waiter("db_instance_deleted")
+                waiter.wait(
+                    DBInstanceIdentifier=db_instance_identifier, WaiterConfig=get_waiter_config()
+                )
             LOGGER.info("Deleting %s db cluster" % db_identifier)
             client.delete_db_cluster(
                 DBClusterIdentifier=db_identifier, SkipFinalSnapshot=True
@@ -252,6 +254,20 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
         )
         waiter = client.get_waiter("db_cluster_available")
         waiter.wait(DBClusterIdentifier=temp_identifier, WaiterConfig=get_waiter_config())
+        # Delete any orphaned temp instance from a previous failed run (e.g. rename
+        # succeeded but instance was never renamed, leaving the old name in use).
+        try:
+            client.describe_db_instances(DBInstanceIdentifier=temp_instance_identifier)
+            LOGGER.info("Deleting orphaned temp instance %s" % temp_instance_identifier)
+            client.delete_db_instance(
+                DBInstanceIdentifier=temp_instance_identifier,
+                SkipFinalSnapshot=True,
+                DeleteAutomatedBackups=True,
+            )
+            waiter = client.get_waiter("db_instance_deleted")
+            waiter.wait(DBInstanceIdentifier=temp_instance_identifier, WaiterConfig=get_waiter_config())
+        except ClientError:
+            pass  # Instance doesn't exist, no conflict
         LOGGER.info("Creating DB instance")
         client.create_db_instance(
             DBClusterIdentifier=temp_identifier,
