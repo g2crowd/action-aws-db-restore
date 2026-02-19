@@ -322,6 +322,9 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
         )
         _wait_after_rename(client.get_waiter("db_cluster_available"), DBClusterIdentifier=db_identifier)
 
+        if target_exists:
+            delete_rds(client, old_identifier, cluster_mode)
+
         LOGGER.info("Renaming instance {} to {}".format(temp_instance_identifier, db_identifier + "-main"))
         client.modify_db_instance(
             DBInstanceIdentifier=temp_instance_identifier,
@@ -329,9 +332,6 @@ def restore_snapshot(client, data, target_exists, cluster_mode):
             ApplyImmediately=True,
         )
         _wait_after_rename(client.get_waiter("db_instance_available"), DBInstanceIdentifier=db_identifier + "-main")
-
-        if target_exists:
-            delete_rds(client, old_identifier, cluster_mode)
 
     else:
         vpc_sg_ids = data["VpcSecurityGroupIds"]
